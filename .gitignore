@@ -1,0 +1,10 @@
+data/
+models/*.txt
+models/*.json
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+
+logs/
