@@ -22,6 +22,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, confusion_matrix
 
+from collect import forward_index
+
 DATA = Path("data")
 MODELS = Path("models")
 MODELS.mkdir(exist_ok=True)
@@ -107,10 +109,7 @@ def relabel(df, horizon):
     """Re-derive labels at a different horizon without re-collecting."""
     ts = df["ts"].to_numpy()
     mid = df["mid"].to_numpy()
-    j = np.searchsorted(ts, ts + horizon, side="left")
-    ok = j < len(ts)
-    j = np.clip(j, 0, len(ts) - 1)
-    ok &= (ts[j] - ts) <= horizon + 2.0          # gap guard
+    j, ok = forward_index(ts, horizon)
     fwd = np.where(ok, (mid[j] / mid - 1.0) * 1e4, np.nan)
     thr = np.maximum(df["spread_bps"].to_numpy() / 2.0, 0.5)
     out = df.copy()

@@ -27,7 +27,7 @@ DATA.mkdir(exist_ok=True)
 FLUSH_EVERY = 5000          # rows per parquet chunk
 HORIZON_S = 10.0            # forward window for labels
 VOL_WINDOW = 300            # ticks (~30s at 100ms) for realized vol
-GAP_TOL_S = 2.0             # max slack past horizon before a label is discarded
+GAP_TOL_S = 10.0            # silence longer than this = outage, not a quiet book
 
 
 # ---------------------------------------------------------------- features
@@ -188,6 +188,24 @@ class Collector:
 
 # ---------------------------------------------------------------- labeling
 
+def forward_index(ts, horizon, tol=GAP_TOL_S):
+    """As-of index of the book state at t + horizon.
+
+    depth20 only pushes when the book changes, so a quiet 5-7s stretch is not
+    missing data -- the price simply didn't move. Use the last snapshot at or
+    before t+h. A row is invalid only if its window runs past the end of the
+    data, or crosses a silence longer than `tol` (a real outage / restart).
+    """
+    n = len(ts)
+    i = np.arange(n)
+    j = np.searchsorted(ts, ts + horizon, side="right") - 1
+    ok = (ts + horizon) <= ts[-1]
+    big = np.concatenate([[0], np.cumsum(np.diff(ts) > tol)])
+    k = np.minimum(j + 1, n - 1)          # include the gap that spans t+h
+    ok &= big[k] == big[i]
+    return j, ok
+
+
 def build_labels(symbol, horizon=HORIZON_S):
     """Forward mid return over `horizon` seconds, with a spread-aware deadband.
 
@@ -203,17 +221,13 @@ def build_labels(symbol, horizon=HORIZON_S):
 
     ts = df["ts"].to_numpy()
     mid = df["mid"].to_numpy()
-    j = np.searchsorted(ts, ts + horizon, side="left")
-    ok = j < len(ts)
-    j = np.clip(j, 0, len(ts) - 1)
-    # gap guard: if the stream dropped, the "future" tick could be hours away
-    ok &= (ts[j] - ts) <= horizon + GAP_TOL_S
+    j, ok = forward_index(ts, horizon)
 
     fwd = np.where(ok, (mid[j] / mid - 1.0) * 1e4, np.nan)
     df["fwd_ret_bps"] = fwd
     n_gap = int((~ok).sum())
     if n_gap:
-        print(f"dropped {n_gap:,} rows whose forward window crossed a stream gap")
+        print(f"dropped {n_gap:,} rows (window crossed an outage or ran past the end)")
 
     thr = np.maximum(df["spread_bps"].to_numpy() / 2.0, 0.5)
     df["label"] = np.select([fwd > thr, fwd < -thr], [1, -1], default=0)
