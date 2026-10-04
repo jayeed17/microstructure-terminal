@@ -11,6 +11,8 @@ worth reporting, not hiding.
 Assumptions, stated plainly:
   - Enter by crossing the spread (pay half-spread in), exit the same way.
   - Hold exactly `horizon` seconds, no stops, no sizing.
+  - Forward returns are rederived for the model's horizon, not read from the
+    parquet (whose label column is fixed at collection time).
   - No market impact. Fine for small size; not fine if you scale it.
 """
 
@@ -22,6 +24,8 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
+from train import relabel
+
 DATA = Path("data")
 MODELS = Path("models")
 
@@ -31,6 +35,10 @@ def run(symbol, horizon, fee_bps, conf, train_frac=0.85):
     feats = json.loads((MODELS / f"{symbol}_h{int(horizon)}_features.json").read_text())
 
     df = pd.read_parquet(DATA / f"labeled_{symbol}.parquet").sort_values("ts").reset_index(drop=True)
+    # The parquet's fwd_ret_bps is frozen at build_labels' horizon (default 10s).
+    # Scoring an h-second model against it measures the wrong outcome, so always
+    # rederive the forward return for THIS model's horizon.
+    df = relabel(df, horizon)
     ts = df["ts"].to_numpy()
     cut = ts[0] + (ts[-1] - ts[0]) * train_frac
     te = df[ts >= cut].reset_index(drop=True)          # out-of-sample only
