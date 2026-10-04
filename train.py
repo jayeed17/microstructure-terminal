@@ -74,7 +74,7 @@ def fit(tr, va, feats, seed=0):
     )
 
 
-def evaluate(model, te, feats, name="test"):
+def evaluate(model, te, feats, horizon=10.0, name="test"):
     inv = {0: -1, 1: 0, 2: 1}
     proba = model.predict(te[feats], num_iteration=model.best_iteration)
     pred = np.vectorize(inv.get)(proba.argmax(1))
@@ -94,6 +94,23 @@ def evaluate(model, te, feats, name="test"):
     print(f"mean fwd_ret | pred=UP    {edge_up:+.3f} bps  (n={(pred==1).sum():,})")
     print(f"mean fwd_ret | pred=DOWN  {edge_dn:+.3f} bps  (n={(pred==-1).sum():,})")
     print(f"gross edge per trade      {(edge_up - edge_dn)/2:+.3f} bps")
+
+    # Significance. Overlapping windows make naive t-stats far too generous, so
+    # also report one on a non-overlapping subsample (trades >= horizon apart).
+    traded = pred != 0
+    pnl = (pred * fwd)[traded]
+    t_all = pnl.mean() / pnl.std() * np.sqrt(len(pnl)) if len(pnl) > 1 else 0.0
+
+    ts_tr = te["ts"].to_numpy()[traded]
+    keep, last = [], -np.inf
+    for k, tt in enumerate(ts_tr):
+        if tt - last >= horizon:
+            keep.append(k); last = tt
+    pnl_ind = pnl[keep]
+    t_ind = (pnl_ind.mean() / pnl_ind.std() * np.sqrt(len(pnl_ind))
+             if len(pnl_ind) > 1 and pnl_ind.std() else 0.0)
+    print(f"t-stat (overlapping)      {t_all:.2f}   n={len(pnl):,}")
+    print(f"t-stat (non-overlapping)  {t_ind:.2f}   n={len(pnl_ind):,}   <- trust this one")
     print("\nconfusion (rows=true down/flat/up):")
     print(confusion_matrix(y, pred, labels=[-1, 0, 1]))
 
@@ -101,6 +118,7 @@ def evaluate(model, te, feats, name="test"):
         "accuracy": float(acc), "baseline": float(base),
         "edge_up_bps": float(edge_up), "edge_down_bps": float(edge_dn),
         "gross_edge_bps": float((edge_up - edge_dn) / 2),
+        "t_stat": float(t_ind),
         "n_test": int(len(te)),
     }
 
@@ -136,14 +154,14 @@ def main():
     results = {}
 
     for h in horizons:
-        d = relabel(df, h) if a.sweep or h != a.horizon else df
+        d = relabel(df, h)      # parquet labels are fixed at build time; always rederive
         feats = feature_cols(d)
         tr, va, te = split(d, h)
         if min(len(tr), len(va), len(te)) < 1000:
             print(f"horizon {h}s: not enough data yet, skipping")
             continue
         m = fit(tr, va, feats)
-        r = evaluate(m, te, feats, name=f"horizon={h}s")
+        r = evaluate(m, te, feats, horizon=h, name=f"horizon={h}s")
         results[str(h)] = r
         if not a.sweep:
             m.save_model(MODELS / f"{a.symbol}_h{int(h)}.txt")
@@ -158,7 +176,7 @@ def main():
         s = pd.DataFrame(results).T
         s.index.name = "horizon_s"
         print("\n=== signal decay ===")
-        print(s[["accuracy", "baseline", "gross_edge_bps"]].round(4))
+        print(s[["gross_edge_bps", "t_stat", "n_test", "accuracy"]].round(4))
         s.to_csv(MODELS / f"{a.symbol}_sweep.csv")
         print(f"\nsaved -> models/{a.symbol}_sweep.csv  (this table is your headline chart)")
 
