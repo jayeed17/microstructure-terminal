@@ -1,5 +1,5 @@
 """
-README charts. Reads the committed CSVs in models/ only -- no analysis is recomputed.
+README charts. Reads the committed CSVs in models/ only. No analysis is recomputed.
 
   python docs/charts.py
 """
@@ -21,7 +21,8 @@ MEDIAN_SNAPSHOT_GAP_MS = 193                        # BTC labeled data, see READ
 plt.rcParams.update({
     "figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "savefig.facecolor": SURFACE,
     "axes.edgecolor": INK2, "axes.labelcolor": INK2, "xtick.color": INK2, "ytick.color": INK2,
-    "text.color": INK, "font.size": 10, "axes.titlesize": 12, "axes.titleweight": "bold",
+    "text.color": INK, "font.size": 11.5, "axes.titlesize": 13, "axes.titleweight": "bold",
+    "font.family": "serif", "font.serif": ["Times New Roman", "Times", "Georgia", "DejaVu Serif"],
     "axes.spines.top": False, "axes.spines.right": False,
     "axes.grid": True, "grid.color": GRID, "grid.linewidth": 0.8, "axes.axisbelow": True,
     "lines.linewidth": 2, "lines.markersize": 6, "legend.frameon": False,
@@ -30,7 +31,7 @@ plt.rcParams.update({
 
 def end_label(ax, x, y, text, color):
     ax.annotate(text, (x, y), xytext=(6, 0), textcoords="offset points",
-                va="center", color=INK, fontsize=9, fontweight="bold")
+                va="center", color=INK, fontsize=10.5, fontweight="bold")
     ax.plot([], [], color=color)
 
 
@@ -61,13 +62,13 @@ def latency():
         if r.latency_ms in (0, 50):
             continue
         ax.annotate(f"{r.breakeven_fee_bps:.2f}", (r.latency_ms, r.breakeven_fee_bps),
-                    xytext=(7, 6), textcoords="offset points", ha="left", fontsize=9, color=INK2)
+                    xytext=(7, 6), textcoords="offset points", ha="left", fontsize=10.5, color=INK2)
     r50 = s[s.latency_ms == 50].iloc[0]
     ax.plot(50, r50.breakeven_fee_bps, "o", ms=13, mfc="none", mec=INK2, mew=1.2)
-    ax.annotate(f"50 ms: not measurable\n(median snapshot gap {MEDIAN_SNAPSHOT_GAP_MS} ms;\n"
-                "entry resolves to the L=0 snapshot)",
+    ax.annotate(f"50 ms is not measurable. The median\nsnapshot gap is {MEDIAN_SNAPSHOT_GAP_MS} ms, so entry\n"
+                "resolves to the L=0 snapshot.",
                 (50, r50.breakeven_fee_bps), xytext=(150, r50.breakeven_fee_bps - 0.02),
-                fontsize=9, color=INK2, va="top",
+                fontsize=10.5, color=INK2, va="top",
                 arrowprops=dict(arrowstyle="-", color=INK2, lw=0.8))
     ax.set_xticks(s.latency_ms, [f"{int(v)}" for v in s.latency_ms])
     ax.set_ylim(0, 1.05)
@@ -90,7 +91,7 @@ def daily():
     ax.set_ylim(-0.1, 1.5)
     ax.set_ylabel("breakeven fee (bps)")
     ax.set_title("Walk-forward daily breakeven fee (horizon 1s, conf 0.6)", loc="left")
-    ax.legend(loc="upper left", ncol=2)
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 0.16), ncol=2)
     fig.tight_layout()
     fig.savefig(OUT / "daily.png", dpi=150)
 

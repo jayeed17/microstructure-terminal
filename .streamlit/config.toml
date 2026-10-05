@@ -1,0 +1,17 @@
+[theme]
+font = "serif"
+headingFont = "serif"
+baseFontSize = 17
+
+# Defining both sections keeps Streamlit's light/dark switching (following the
+# viewer's system setting) instead of locking the custom theme to light.
+[theme.light]
+backgroundColor = "#fcfcfb"
+primaryColor = "#1f4e8c"
+
+[theme.dark]
+backgroundColor = "#0e1117"
+primaryColor = "#7aa7e0"
+
+[browser]
+gatherUsageStats = false

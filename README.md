@@ -2,13 +2,13 @@
 
 **[Live demo →](https://microstructure-terminal.streamlit.app/)**
 
-Does order flow imbalance predict short-horizon price movement on a retail crypto
-venue — and if so, can a retail participant actually capture it?
+Does order flow imbalance predict short-horizon price moves on a retail crypto
+venue? If it does, can a retail participant capture it?
 
-**Short answer: yes, and no.** The signal is real, statistically robust, and
-replicates across assets and days. It is also ~11x too small to clear retail
-fees, and ~70% of its breakeven margin is consumed by 250ms of network latency.
-Two independent mechanisms, each sufficient on its own, put it out of reach.
+**Yes, and no.** The signal is real, statistically robust, and replicates across
+assets and days. It is also ~11x too small to clear retail fees, and 250ms of
+network latency consumes ~70% of its breakeven margin. Fees and latency are two
+independent problems, and either one alone puts the signal out of reach.
 
 ---
 
@@ -22,32 +22,32 @@ Two independent mechanisms, each sufficient on its own, put it out of reach.
 | Median book snapshot gap | 193 ms | 106 ms |
 | Median spread | 0.04 bps | 0.333 bps |
 
-Self-collected via a 24/7 websocket collector (`collect.py`). Public market data
-only — no API keys, no order placement anywhere in this repo.
+I collected the data with a 24/7 websocket collector (`collect.py`). It is public
+market data only. There are no API keys and no order placement anywhere in this repo.
 
 ## Method
 
-**Features** per book snapshot: queue imbalance at 1/5/20 levels, order flow
+**Features.** Each book snapshot gets queue imbalance at 1/5/20 levels, order flow
 imbalance (Cont, Kukanov & Stoikov 2014), microprice deviation, distance-weighted
-book pressure, signed trade flow over 1/5/10s, realized volatility, spread.
+book pressure, signed trade flow over 1/5/10s, realized volatility, and spread.
 
-**Label:** forward mid return over the prediction horizon, bucketed to
-down/flat/up with a deadband of max(spread/2, 0.5 bps) — a move only counts as
-directional if it cleared half the spread and at least 0.5 bps. With a median BTC
-spread of 0.04 bps the 0.5 bps floor binds almost always, which is why ~49% of BTC
-rows are labeled flat (at the default 10s labeling horizon).
+**Labels.** The forward mid return over the prediction horizon, bucketed into
+down/flat/up with a deadband of max(spread/2, 0.5 bps). A move only counts as
+directional if it cleared half the spread and at least 0.5 bps. The median BTC
+spread is 0.04 bps, so the 0.5 bps floor binds almost always. That is why ~49% of
+BTC rows are labeled flat (at the default 10s labeling horizon).
 
-**Model:** LightGBM multiclass, chronological splits with an embargo equal to the
-prediction horizon at each seam. Raw price levels are excluded as features.
+**Model.** LightGBM multiclass with chronological splits and an embargo equal to
+the prediction horizon at each seam. Raw price levels are excluded as features.
 
-**Validation:** expanding-window walk-forward, retraining daily, evaluating only
+**Validation.** Expanding-window walk-forward, retrained daily and evaluated only
 on the held-out next day. 11 test days per symbol.
 
 ## Results
 
 ### 1. Signal decay by horizon
 
-Gross edge per trade (bps):
+Gross edge per trade, in bps.
 
 | horizon | 1s | 2s | 5s | 10s | 30s | 60s |
 |---|---|---|---|---|---|---|
@@ -55,8 +55,8 @@ Gross edge per trade (bps):
 | ETH | 0.654 | 0.562 | 0.417 | 0.314 | 0.302 | 0.312 |
 
 Edge is concentrated at 1–2 seconds and decays monotonically on BTC. ETH flattens
-near 0.3 bps beyond 10s; with overlapping windows inflating significance at long
-horizons, this difference is not something to build on.
+near 0.3 bps beyond 10s. Overlapping windows inflate significance at long horizons,
+so that difference is not something to build on.
 
 ![Gross edge vs horizon](docs/decay.png)
 
@@ -73,16 +73,16 @@ horizons, this difference is not something to build on.
 | Daily breakeven (mean ± sd) | 0.881 ± 0.124 | 1.006 ± 0.193 |
 | Trend slope | +0.016 bps/day (t=1.42) | −0.020 bps/day (t=−1.09) |
 
-Positive every day on both assets, with no significant trend. ETH's median spread
-is 0.333 bps but spread paid was 0.074 bps, so the model trades disproportionately
-when spreads are tight — a selection effect, not a cost saving. Neither symbol's
-breakeven approaches a realistic taker fee.
+The edge is positive every day on both assets, with no significant trend. ETH's
+median spread is 0.333 bps but spread paid was 0.074 bps, so the model trades
+disproportionately when spreads are tight. That is a selection effect, not a cost
+saving. Neither symbol's breakeven comes close to a realistic taker fee.
 
 ![Daily walk-forward breakeven fee](docs/daily.png)
 
 ### 3. Latency sensitivity (BTC)
 
-Signal is generated at time *t*; a real order arrives at *t+L*.
+The signal fires at time *t*. A real order arrives at *t+L*.
 
 | L | gross (bps) | breakeven (bps) | days with positive breakeven¹ |
 |---|---|---|---|
@@ -94,49 +94,51 @@ Signal is generated at time *t*; a real order arrives at *t+L*.
 | 1 s | 0.199 | 0.082 | 9/11 (Sep 30 and Oct 4 negative) |
 
 By 250ms, breakeven fee falls 70% (0.900 → 0.272) and gross edge falls 55%
-(0.962 → 0.429). **The 50ms row is an artifact**: with a median
-snapshot gap of 193ms, sub-100ms entry almost always resolves to the same snapshot
-as L=0, so real sub-100ms decay is not measurable with this data.
+(0.962 → 0.429).
+
+**The 50ms row is an artifact.** The median snapshot gap is 193ms, so sub-100ms
+entry almost always resolves to the same snapshot as L=0. Real sub-100ms decay is
+not measurable with this data.
 
 ¹ Days on which the walk-forward breakeven fee was positive, from
 `models/btcusdt_latency_daily.csv`. The `days_positive` column in
 `models/btcusdt_latency.csv` counts gross-positive days instead (11/11 at every
-latency) — a different measure.
+latency). That is a different measure.
 
 ![Breakeven fee vs latency](docs/latency.png)
 
-### 4. Conditional analysis — a null
+### 4. Conditional analysis (null result)
 
-Gross edge sits at 0.7–0.95 bps across every realized-volatility quintile and
-book-depth tercile, with no pattern. There is no regime where the signal becomes
-large enough to trade. An apparent hour-of-day effect was 24 trades and is noise.
+Gross edge sits at 0.7–0.95 bps in every realized-volatility quintile and
+book-depth tercile, with no pattern. No regime makes the signal large enough to
+trade. An apparent hour-of-day effect was 24 trades and is noise.
 
 ## Conclusion
 
 Order book imbalance predicts BTC and ETH mid-price direction at 1–2 second
-horizons with a hit rate near 0.88 and gross edge near 1 bps. The effect
+horizons, with a hit rate near 0.88 and gross edge near 1 bps. The effect
 replicates across two assets, is positive on 11 of 11 walk-forward days, and
 shows no decay over the sample period.
 
-It is not capturable by a retail participant:
+A retail participant can't capture it, for two reasons.
 
-1. **Fees.** Breakeven is ~0.9–1.0 bps round-trip against retail taker fees an
-   order of magnitude larger.
+1. **Fees.** Breakeven is ~0.9–1.0 bps round-trip. Retail taker fees are an order
+   of magnitude larger.
 2. **Latency.** Most of the edge is consumed within 250ms, before a retail order
    could reach the venue.
 
-The edge clears costs only at fee levels near zero and latency well under 100ms —
-i.e. for a colocated market maker, not someone on home internet. The high hit rate
-is consistent with a known mechanical effect (the mid ticks toward the heavier
-side of the book) rather than with a tradeable forecast.
+The edge clears costs only with fees near zero and latency well under 100ms. That
+means a colocated market maker, not someone on home internet. The high hit rate is
+consistent with a known mechanical effect (the mid ticks toward the heavier side of
+the book), not with a tradeable forecast.
 
 ## Limitations
 
 - Gross edge is measured mid-to-mid. Queue position and adverse selection at the
-  touch are not modeled; both would reduce realized edge further.
-- Market impact is not modeled. Valid at small size only.
-- Overlapping prediction windows inflate naive t-statistics. Daily walk-forward
-  blocks are used as the primary robustness evidence instead.
+  touch are not modeled. Both would reduce realized edge further.
+- Market impact is not modeled. The results hold at small size only.
+- Overlapping prediction windows inflate naive t-statistics, so the daily
+  walk-forward blocks are the main robustness evidence instead.
 - Both symbols' walk-forward windows cover the same calendar period, so
   cross-asset agreement is not independent across time.
 - One venue, one 310-hour window, two assets.
@@ -154,11 +156,12 @@ python walkforward.py btcusdt                # daily walk-forward
 python latency.py btcusdt                    # latency sensitivity
 python docs/charts.py                        # README charts from models/*.csv
 streamlit run app.py                         # terminal: Findings / Replay / Live tabs
+python check_requirements.py                 # every app.py import is in requirements.txt
 ```
 
-A one-day sample (2026-10-03 UTC, both symbols) of raw collector chunks is included
-in `data/sample/`. The labeling step reads `data/raw_*.parquet`, so copy the sample
-there first:
+`data/sample/` has a one-day sample (2026-10-03 UTC, both symbols) of raw
+collector chunks. The labeling step reads `data/raw_*.parquet`, so copy the sample
+there first.
 
 ```bash
 cp data/sample/*.parquet data/
@@ -170,6 +173,6 @@ One day is enough for labeling and a single train/val/test split. `walkforward.p
 and `latency.py` skip the first three days, so they need the full dataset (or
 several days of your own collection). The full 530MB dataset is not committed.
 
-The BTC decay table was verified to reproduce exactly (max difference 0.0 across
-all columns of `models/btcusdt_sweep.csv`) by rerunning
-`python train.py --symbol btcusdt --sweep` with the current committed code.
+The BTC decay table reproduces exactly. Rerunning
+`python train.py --symbol btcusdt --sweep` with the current committed code gave a
+max difference of 0.0 across all columns of `models/btcusdt_sweep.csv`.
