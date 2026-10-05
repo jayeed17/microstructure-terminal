@@ -1,4 +1,5 @@
-data/
+data/*
+!data/sample/
 models/*.txt
 models/*.json
 .venv/
