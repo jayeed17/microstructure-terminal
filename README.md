@@ -151,7 +151,7 @@ python train.py --symbol btcusdt --sweep     # decay curve
 python walkforward.py btcusdt                # daily walk-forward
 python latency.py btcusdt                    # latency sensitivity
 python docs/charts.py                        # README charts from models/*.csv
-streamlit run app.py                         # live terminal
+streamlit run app.py                         # terminal: Findings / Replay / Live tabs
 ```
 
 A one-day sample (2026-10-03 UTC, both symbols) of raw collector chunks is included

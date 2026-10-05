@@ -2,6 +2,8 @@ data/*
 !data/sample/
 models/*.txt
 models/*.json
+!models/*_h1.txt
+!models/*_h1_features.json
 .venv/
 __pycache__/
 *.pyc
