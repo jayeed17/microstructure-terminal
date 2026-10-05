@@ -5,21 +5,20 @@ venue — and if so, can a retail participant actually capture it?
 
 **Short answer: yes, and no.** The signal is real, statistically robust, and
 replicates across assets and days. It is also ~11x too small to clear retail
-fees, and ~70% of it is consumed by 250ms of network latency. Two independent
-mechanisms, each sufficient on its own, put it out of reach.
+fees, and ~70% of its breakeven margin is consumed by 250ms of network latency.
+Two independent mechanisms, each sufficient on its own, put it out of reach.
 
 ---
 
 ## Data
 
-| | |
-|---|---|
-| Source | Binance.US L2 order book (`depth20@100ms`) + aggregate trades |
-| Symbols | BTCUSDT, ETHUSDT |
-| Period | 21 Sep – 4 Oct 2026 (310 hours continuous) |
-| Rows | 3.44M (BTC), 3.2M+ (ETH) |
-| Median book snapshot gap | 193 ms |
-| Median spread | 0.04 bps |
+| | BTCUSDT | ETHUSDT |
+|---|---|---|
+| Source | Binance.US L2 order book (`depth20@100ms`) + aggregate trades | same |
+| Period | 21 Sep – 4 Oct 2026 (310 hours continuous) | same |
+| Rows | 3.44M | 3.64M |
+| Median book snapshot gap | 193 ms | 106 ms |
+| Median spread | 0.04 bps | 0.333 bps |
 
 Self-collected via a 24/7 websocket collector (`collect.py`). Public market data
 only — no API keys, no order placement anywhere in this repo.
@@ -31,8 +30,10 @@ imbalance (Cont, Kukanov & Stoikov 2014), microprice deviation, distance-weighte
 book pressure, signed trade flow over 1/5/10s, realized volatility, spread.
 
 **Label:** forward mid return over the prediction horizon, bucketed to
-down/flat/up with a deadband of half the prevailing spread — a move only counts
-as directional if it was large enough to be worth trading.
+down/flat/up with a deadband of max(spread/2, 0.5 bps) — a move only counts as
+directional if it cleared half the spread and at least 0.5 bps. With a median BTC
+spread of 0.04 bps the 0.5 bps floor binds almost always, which is why ~49% of BTC
+rows are labeled flat (at the default 10s labeling horizon).
 
 **Model:** LightGBM multiclass, chronological splits with an embargo equal to the
 prediction horizon at each seam. Raw price levels are excluded as features.
@@ -70,7 +71,9 @@ horizons, this difference is not something to build on.
 | Daily breakeven (mean ± sd) | 0.881 ± 0.124 | 1.006 ± 0.193 |
 | Trend slope | +0.016 bps/day (t=1.42) | −0.020 bps/day (t=−1.09) |
 
-Positive every day on both assets, with no significant trend. Neither symbol's
+Positive every day on both assets, with no significant trend. ETH's median spread
+is 0.333 bps but spread paid was 0.074 bps, so the model trades disproportionately
+when spreads are tight — a selection effect, not a cost saving. Neither symbol's
 breakeven approaches a realistic taker fee.
 
 ![Daily walk-forward breakeven fee](docs/daily.png)
@@ -79,18 +82,24 @@ breakeven approaches a realistic taker fee.
 
 Signal is generated at time *t*; a real order arrives at *t+L*.
 
-| L | gross (bps) | breakeven (bps) | days positive |
+| L | gross (bps) | breakeven (bps) | days with positive breakeven¹ |
 |---|---|---|---|
 | 0 | 0.962 | 0.900 | 11/11 |
 | 50 ms | 0.976 | 0.913 | 11/11 |
 | 100 ms | 0.777 | 0.587 | 11/11 |
 | 250 ms | 0.429 | 0.272 | 11/11 |
 | 500 ms | 0.293 | 0.160 | 11/11 |
-| 1 s | 0.199 | 0.082 | 9/11 |
+| 1 s | 0.199 | 0.082 | 9/11 (Sep 30 and Oct 4 negative) |
 
-~70% of the edge is gone by 250ms. **The 50ms row is an artifact**: with a median
+By 250ms, breakeven fee falls 70% (0.900 → 0.272) and gross edge falls 55%
+(0.962 → 0.429). **The 50ms row is an artifact**: with a median
 snapshot gap of 193ms, sub-100ms entry almost always resolves to the same snapshot
 as L=0, so real sub-100ms decay is not measurable with this data.
+
+¹ Days on which the walk-forward breakeven fee was positive, from
+`models/btcusdt_latency_daily.csv`. The `days_positive` column in
+`models/btcusdt_latency.csv` counts gross-positive days instead (11/11 at every
+latency) — a different measure.
 
 ![Breakeven fee vs latency](docs/latency.png)
 
