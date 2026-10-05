@@ -50,7 +50,7 @@ Gross edge per trade (bps):
 | horizon | 1s | 2s | 5s | 10s | 30s | 60s |
 |---|---|---|---|---|---|---|
 | BTC | 0.614 | 0.589 | 0.319 | 0.242 | 0.184 | 0.130 |
-| ETH | 0.655 | 0.562 | 0.417 | 0.314 | 0.302 | 0.312 |
+| ETH | 0.654 | 0.562 | 0.417 | 0.314 | 0.302 | 0.312 |
 
 Edge is concentrated at 1–2 seconds and decays monotonically on BTC. ETH flattens
 near 0.3 bps beyond 10s; with overlapping windows inflating significance at long
@@ -167,3 +167,7 @@ python train.py --symbol btcusdt --horizon 1
 One day is enough for labeling and a single train/val/test split. `walkforward.py`
 and `latency.py` skip the first three days, so they need the full dataset (or
 several days of your own collection). The full 530MB dataset is not committed.
+
+The BTC decay table was verified to reproduce exactly (max difference 0.0 across
+all columns of `models/btcusdt_sweep.csv`) by rerunning
+`python train.py --symbol btcusdt --sweep` with the current committed code.
