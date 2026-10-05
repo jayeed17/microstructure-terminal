@@ -4,7 +4,7 @@ Microstructure terminal.
   streamlit run app.py
 
 Three tabs:
-  Findings  -- results from models/*.csv and docs/*.png. No network, no data/.
+  Findings  -- results and charts from models/*.csv. No network, no data/.
   Replay    -- plays a raw chunk from data/sample/ through the committed h1 model.
   Live      -- streams the Binance.US book and scores it. Stops 30s after the last viewer leaves.
 
@@ -27,9 +27,11 @@ import streamlit as st
 from collect import book_features, ofi
 
 ROOT = Path(__file__).resolve().parent
-MODELS, DOCS, SAMPLE = ROOT / "models", ROOT / "docs", ROOT / "data" / "sample"
+MODELS, SAMPLE = ROOT / "models", ROOT / "data" / "sample"
 CONF = 0.6                      # walk-forward signal threshold (walkforward.py)
 SYMBOLS = {"btcusdt": "BTC", "ethusdt": "ETH"}
+COLORS = alt.Scale(domain=["BTC", "ETH"], range=["#2a78d6", "#eb6834"])   # docs/charts.py
+MEDIAN_SNAPSHOT_GAP_MS = 193   # BTC labeled data, README "Data"
 LIVE_IDLE_S = 30                # live stream closes this long after the last viewer tick
 FONT = '"Times New Roman", Times, Georgia, sans-serif'
 st.set_page_config(page_title="Microstructure Terminal", layout="wide")
@@ -70,7 +72,6 @@ html, body, .stApp, .stApp p, .stApp li, .stApp label, .stApp input, .stApp butt
 .tbl thead th {{ font-weight: 600; border-bottom: 1px solid rgba(128, 128, 128, 0.6); }}
 .tbl .n {{ text-align: right; }}
 .tbl .l {{ text-align: left; }}
-.stApp [data-testid="stImage"] img {{ border-radius: 4px; max-width: 46rem; }}
 @media (max-width: 640px) {{
   [data-testid="stMainBlockContainer"] {{ padding-top: 3.5rem; }}
   .stApp h1 {{ font-size: 1.7rem; }}
@@ -218,7 +219,7 @@ def findings():
     prose("Edge is concentrated at 1 to 2 seconds and decays monotonically on BTC. ETH "
           "flattens near 0.3 bps beyond 10s. Overlapping windows inflate significance at "
           "long horizons, so that difference is not something to build on.")
-    show_png("decay.png", "Gross edge vs horizon")
+    show_chart(decay_chart, "Gross edge vs horizon")
 
     st.markdown("## 2. Walk-forward robustness (horizon 1s, confidence 0.6)")
     try:
@@ -231,7 +232,7 @@ def findings():
           "median spread is 0.333 bps but spread paid was 0.074 bps, so the model trades "
           "disproportionately when spreads are tight. That is a selection effect, not a "
           "cost saving. Neither symbol's breakeven comes close to a realistic taker fee.")
-    show_png("daily.png", "Daily walk-forward breakeven fee")
+    show_chart(daily_chart, "Daily walk-forward breakeven fee")
 
     st.markdown("## 3. Latency sensitivity (BTC)")
     try:
@@ -241,7 +242,7 @@ def findings():
     prose("The signal fires at t and the order arrives at t+L. The 50ms row is an artifact. "
           "The median snapshot gap is 193ms, so sub-100ms entry almost always resolves to "
           "the L=0 snapshot.")
-    show_png("latency.png", "Breakeven fee vs latency")
+    show_chart(latency_chart, "Breakeven fee vs latency")
 
     st.markdown("## Conclusion")
     prose(
@@ -258,12 +259,89 @@ def findings():
     )
 
 
-def show_png(name, caption):
-    p = DOCS / name
-    if p.exists():
-        st.image(str(p), caption=caption, width="stretch")
-    else:
-        st.warning(f"docs/{name} is missing. Run python docs/charts.py.")
+def show_chart(build, caption):
+    try:
+        st.altair_chart(chart(build()), width="stretch")
+        st.caption(caption)
+    except Exception as e:
+        st.warning(f"{caption} chart unavailable. {e}")
+
+
+def findings_title(text, subtitle=None):
+    return alt.Title(text, subtitle=subtitle or "", anchor="start", font=FONT, fontSize=15,
+                     subtitleFont=FONT, subtitleFontSize=13, subtitleColor="gray", offset=10)
+
+
+def by_symbol(csv):
+    return pd.concat([pd.read_csv(MODELS / f"{sym}_{csv}.csv").assign(symbol=name)
+                      for sym, name in SYMBOLS.items()], ignore_index=True)
+
+
+def symbol_legend():
+    return alt.Color("symbol:N", scale=COLORS, title=None,
+                     legend=alt.Legend(orient="top", direction="horizontal", offset=4))
+
+
+def decay_chart():
+    d = by_symbol("sweep")
+    base = alt.Chart(d).encode(
+        x=alt.X("horizon_s:Q", title="prediction horizon (log scale)",
+                scale=alt.Scale(type="log", domain=[0.85, 75]),
+                axis=alt.Axis(values=[1, 2, 5, 10, 30, 60], labelExpr="datum.value + 's'", grid=True)),
+        y=alt.Y("gross_edge_bps:Q", title="gross edge per trade (bps)", scale=alt.Scale(zero=True)),
+        color=symbol_legend(),
+        tooltip=["symbol", alt.Tooltip("horizon_s:Q", title="horizon (s)"),
+                 alt.Tooltip("gross_edge_bps:Q", title="gross edge (bps)", format=".3f")],
+    )
+    return (base.mark_line(strokeWidth=2) + base.mark_point(filled=True, size=50)).properties(
+        title=findings_title("Signal decay by horizon"), height=300)
+
+
+def latency_chart():
+    d = pd.read_csv(MODELS / "btcusdt_latency.csv")
+    d["note"] = np.where(d.latency_ms <= 50, "", d.breakeven_fee_bps.map("{:.2f}".format))
+    x = alt.X("latency_ms:Q", title="order arrival latency L (ms)",
+              scale=alt.Scale(domain=[0, 1050], nice=False),
+              axis=alt.Axis(values=[0, 100, 250, 500, 1000], format="d"))
+    y = alt.Y("breakeven_fee_bps:Q", title="breakeven fee (bps)", scale=alt.Scale(domain=[0, 1.05]))
+    base = alt.Chart(d).encode(x=x, y=y, tooltip=[
+        alt.Tooltip("latency_ms:Q", title="L (ms)"),
+        alt.Tooltip("breakeven_fee_bps:Q", title="breakeven (bps)", format=".3f")])
+    line = base.mark_line(strokeWidth=2, color="#2a78d6") + base.mark_point(filled=True, size=50, color="#2a78d6")
+    values = base.mark_text(align="left", dx=6, dy=-9, font=FONT, fontSize=12, color="gray").encode(text="note:N")
+    p50 = d[d.latency_ms == 50]
+    ring = alt.Chart(p50).mark_point(size=300, color="gray", strokeWidth=1.2).encode(x=x, y=y)
+    # Note sits in the empty upper right, with a leader line back to the 50ms point.
+    nx, ny = 300, 1.0
+    leader = alt.Chart(p50.assign(nx=nx - 10, ny=ny - 0.06)).mark_rule(color="gray", strokeWidth=0.8).encode(
+        x=x, y=y, x2="nx:Q", y2="ny:Q")
+    note = alt.Chart(pd.DataFrame({"nx": [nx], "ny": [ny]})).mark_text(
+        align="left", baseline="top", font=FONT, fontSize=12, color="gray", lineHeight=15,
+    ).encode(x=alt.X("nx:Q", scale=alt.Scale(domain=[0, 1050], nice=False)),
+             y=alt.Y("ny:Q", scale=alt.Scale(domain=[0, 1.05])),
+             text=alt.value(["50 ms is not measurable.",
+                             f"Median snapshot gap is {MEDIAN_SNAPSHOT_GAP_MS} ms,",
+                             "so entry resolves to the", "L=0 snapshot."]))
+    return (line + values + ring + leader + note).properties(
+        title=findings_title("BTC breakeven fee vs latency", "horizon 1s, conf 0.6"), height=300)
+
+
+def daily_chart():
+    d = by_symbol("walkforward")
+    base = alt.Chart(d).encode(
+        # CSV dates are UTC day strings; a utc scale keeps points, ticks and labels on the
+        # same day regardless of the viewer's timezone.
+        x=alt.X("date:T", title=None, scale=alt.Scale(type="utc"), axis=alt.Axis(
+            format="%b %d", labelFlush=True, values=[alt.DateTime(year=t.year, month=t.month, date=t.day, utc=True)
+                                    for t in pd.to_datetime(d["date"]).drop_duplicates().sort_values()[::2]])),
+        y=alt.Y("breakeven_fee_bps:Q", title="breakeven fee (bps)", scale=alt.Scale(domain=[-0.1, 1.5])),
+        color=symbol_legend(),
+        tooltip=["symbol", alt.Tooltip("date:T", format="%b %d", formatType="utc"),
+                 alt.Tooltip("breakeven_fee_bps:Q", title="breakeven (bps)", format=".3f")],
+    )
+    zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="gray", strokeWidth=1).encode(y="y:Q")
+    return (zero + base.mark_line(strokeWidth=2) + base.mark_point(filled=True, size=50)).properties(
+        title=findings_title("Walk-forward daily breakeven fee", "horizon 1s, conf 0.6"), height=300)
 
 
 @st.cache_data
