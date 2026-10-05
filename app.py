@@ -68,7 +68,7 @@ def show_history(h):
     st.markdown("**mid**")
     st.altair_chart(
         alt.Chart(h).mark_line(color="#2563eb").encode(
-            x=alt.X("t:T", title=None),
+            x=alt.X("t:T", title=None, axis=alt.Axis(format="%H:%M:%S")),
             y=alt.Y("mid:Q", scale=alt.Scale(zero=False), title=None),
         ).properties(height=150),
         width="stretch",
@@ -77,7 +77,7 @@ def show_history(h):
     m = h.melt(id_vars="t", value_vars=["imb_5", "press_w"], var_name="feature", value_name="v")
     st.altair_chart(
         alt.Chart(m).mark_line().encode(
-            x=alt.X("t:T", title=None),
+            x=alt.X("t:T", title=None, axis=alt.Axis(format="%H:%M:%S")),
             y=alt.Y("v:Q", title=None),
             color=alt.Color("feature:N", legend=alt.Legend(orient="bottom")),
         ).properties(height=150),
