@@ -1,5 +1,7 @@
 # Crypto Market Microstructure Terminal
 
+**[Live demo →](https://microstructure-terminal.streamlit.app/)**
+
 Does order flow imbalance predict short-horizon price movement on a retail crypto
 venue — and if so, can a retail participant actually capture it?
 
